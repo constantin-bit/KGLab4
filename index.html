@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Lab4</title>
+  <style>
+    canvas {
+      border: 3px solid rgb(0, 0, 0);
+      display: block;
+      cursor: crosshair;
+    }
+    .mainBlock {
+      display: flex; 
+      gap: 30px;
+    }
+    .block {
+      flex-direction: column;
+      display: flex;
+      gap: 15px;
+    }
+  </style>
+</head>
+<body>
+<div class="mainBlock">
+  <div class="block">
+    <canvas id="canvas"></canvas>
+  </div>
+  <div class="block">
+    <input type="file" id="fileInput" accept=".txt">
+    <button id="btnMidpoint">Алгоритм средней точки</button>
+    <button id="btnPolygonСlipping">Отсечение выпуклого многоугольника</button>
+  </div>
+</div>
+
+<script>
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const btnMidpoint = document.getElementById('btnMidpoint');
+  const btnPolygonСlipping = document.getElementById('btnPolygonСlipping');
+  const fileInput = document.getElementById('fileInput');
+
+  canvas.width = 500;
+  canvas.height = 500;
+
+  let scale = 20;
+  let centerX = canvas.width / 2;
+  let centerY = canvas.height / 2;
+
+  let segments = [];
+  let clippedSegments = [];
+  let clippedFig = [];
+  let clipWindow = null;
+
+  let isDragging = false;
+  let startX, startY;
+
+  function calcCode(x, y) {
+    if (!clipWindow) return 0;
+    let code = 0;
+    if (x < clipWindow.xmin) {
+      code |= 1;//(0001)
+    }
+    if (x > clipWindow.xmax) {
+      code |= 2;//(0010)
+    }
+    if (y < clipWindow.ymin) {
+      code |= 4;//(0100)
+    } 
+    if (y > clipWindow.ymax) {
+      code |= 8;//(1000)
+    }
+    return code;
+  }
+
+  function toScreenX(mathX) {
+    return centerX + mathX * scale;
+  }
+  
+  function toScreenY(mathY) {
+    return centerY - mathY * scale;
+  }
+
+  function calculateStep() {
+    const targetPixelStep = 50; 
+    const rawStep = targetPixelStep / scale;
+    const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));
+    const normalized = rawStep / magnitude;
+
+    let stepCoefficient;
+    if (normalized < 1.5) stepCoefficient = 1;
+    else if (normalized < 3.5) stepCoefficient = 2;
+    else if (normalized < 7.5) stepCoefficient = 5;
+    else stepCoefficient = 10;
+    
+    return Math.max(1, magnitude * stepCoefficient);
+  }
+
+  function drawAll() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawGrid();
+    drawSegments();
+    drawClipWindow();
+    drawClippedSegments();
+    drawClippedFig();
+    drawAxes();
+  }
+  
+  function drawGrid() {
+    const step = calculateStep();
+    const gridStep = scale * step; // Шаг сетки в пикселях
+
+    ctx.strokeStyle = '#e0e0e0';
+    ctx.lineWidth = 1;
+    for (let x = centerX; x < canvas.width; x += gridStep) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+    }
+    for (let x = centerX - gridStep; x > 0; x -= gridStep) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+    }
+    for (let y = centerY; y < canvas.height; y += gridStep) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+    }
+    for (let y = centerY - gridStep; y > 0; y -= gridStep) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+    }
+  }
+
+  function drawAxes() {
+    ctx.strokeStyle = '#000000'; 
+    ctx.lineWidth = 2;           
+
+    if (centerY >= 0 && centerY <= canvas.height) {
+      ctx.beginPath(); ctx.moveTo(0, centerY); ctx.lineTo(canvas.width, centerY); ctx.stroke();
+    }
+
+    if (centerX >= 0 && centerX <= canvas.width) {
+      ctx.beginPath(); ctx.moveTo(centerX, 0); ctx.lineTo(centerX, canvas.height); ctx.stroke();
+    }
+
+    ctx.font = '11px Arial';
+    ctx.fillStyle = '#000000';
+
+    const textY = Math.max(15, Math.min(canvas.height - 15, centerY + 15));
+    const textX = Math.max(15, Math.min(canvas.width - 25, centerX - 12));
+
+    const step = calculateStep();
+    const pixelStep = scale * step;
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    let valX = step;
+    for (let x = centerX + pixelStep; x < canvas.width; x += pixelStep) {
+      ctx.beginPath(); ctx.moveTo(x, centerY - 3); ctx.lineTo(x, centerY + 3); ctx.stroke();
+      ctx.fillText(Number(valX.toFixed(2)), x, textY);
+      valX += step;
+    }
+    valX = -step;
+    for (let x = centerX - pixelStep; x > 0; x -= pixelStep) {
+      ctx.beginPath(); ctx.moveTo(x, centerY - 3); ctx.lineTo(x, centerY + 3); ctx.stroke();
+      ctx.fillText(Number(valX.toFixed(2)), x, textY);
+      valX -= step;
+    }
+
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+
+    let valY = step;
+    for (let y = centerY - pixelStep; y > 0; y -= pixelStep) {
+      ctx.beginPath(); ctx.moveTo(centerX - 3, y); ctx.lineTo(centerX + 3, y); ctx.stroke(); 
+      ctx.fillText(Number(valY.toFixed(2)), textX, y);
+      valY += step;
+    }
+    valY = -step;
+    for (let y = centerY + pixelStep; y < canvas.height; y += pixelStep) {
+      ctx.beginPath(); ctx.moveTo(centerX - 3, y); ctx.lineTo(centerX + 3, y); ctx.stroke(); 
+      ctx.fillText(Number(valY.toFixed(2)), textX, y);
+      valY -= step;
+    }
+
+    if (centerX >= 0 && centerX <= canvas.width && centerY >= 0 && centerY <= canvas.height) {
+      ctx.textAlign = 'center';
+      ctx.fillText('0', centerX - 10, centerY + 12);
+    }
+
+    ctx.font = 'bold 14px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('X', canvas.width - 20, Math.max(20, Math.min(canvas.height - 10, centerY - 15)));
+    ctx.fillText('Y', Math.max(10, Math.min(canvas.width - 20, centerX + 15)), 20);
+  }
+  
+  function drawSegments() {
+    if (segments.length === 0) return;
+    
+    ctx.strokeStyle = '#0000FF'; // Синий цвет
+    ctx.lineWidth = 2;
+    
+    segments.forEach(seg => {
+      ctx.beginPath();
+      ctx.moveTo(toScreenX(seg.x1), toScreenY(seg.y1));
+      ctx.lineTo(toScreenX(seg.x2), toScreenY(seg.y2));
+      ctx.stroke();
+    });
+  }
+
+  function drawClipWindow() {
+    if (!clipWindow) return;
+    
+    ctx.strokeStyle = '#FF0000'; // Красный цвет
+    ctx.lineWidth = 2.5;
+    
+    // Переводим математические координаты углов окна в пиксели экрана
+    const xMin = toScreenX(clipWindow.xmin);
+    const xMax = toScreenX(clipWindow.xmax);
+    const yMin = toScreenY(clipWindow.ymin);
+    const yMax = toScreenY(clipWindow.ymax);
+    
+    // Вычисляем ширину и высоту для метода rect() канваса.
+    // На экране Y идет сверху вниз, поэтому yMax будет больше, чем yMin.
+    const width = xMax - xMin;
+    const height = yMax - yMin; 
+    
+    ctx.beginPath();
+    ctx.rect(xMin, yMin, width, height);
+    ctx.stroke();
+  }
+
+  function drawClippedSegments() {
+    if (clippedSegments.length === 0) return;
+
+    ctx.strokeStyle = '#00FF00';
+    ctx.lineWidth = 4;
+    
+    clippedSegments.forEach(seg => {
+      ctx.beginPath();
+      ctx.moveTo(toScreenX(seg.x1), toScreenY(seg.y1));
+      ctx.lineTo(toScreenX(seg.x2), toScreenY(seg.y2));
+      ctx.stroke();
+    });
+  }
+
+  function drawClippedFig() {
+    if (clippedFig.length === 0) return;
+
+    ctx.fillStyle = 'rgba(255, 255, 0, 0.4)';
+    ctx.strokeStyle = '#FFA500';
+    ctx.lineWidth = 4;
+    
+    ctx.beginPath();
+    ctx.moveTo(toScreenX(clippedFig[0].x), toScreenY(clippedFig[0].y));
+
+    for (let i = 1; i < clippedFig.length; i++) {
+      ctx.lineTo(toScreenX(clippedFig[i].x), toScreenY(clippedFig[i].y));
+    }
+
+    ctx.closePath();
+    ctx.fill();   
+    ctx.stroke();
+  }
+
+  //алгоритм средней точки
+  function midpointClip(seg) {
+    let x1 = seg.x1, y1 = seg.y1;
+    let x2 = seg.x2, y2 = seg.y2;
+    const eps = 0.001; 
+
+    let code1 = calcCode(x1, y1);
+    let code2 = calcCode(x2, y2);
+
+    // Тривиальная видимость
+    if (code1 === 0 && code2 === 0) {
+      return { x1, y1, x2, y2 };
+    }
+    
+    // Тривиальная невидимость
+    if ((code1 & code2) !== 0) {
+      return null;
+    }
+
+    if (code1 !== 0){
+      let newX1 = x1, newY1 = y1;
+      let newX2 = x2, newY2 = y2;
+
+      while(Math.abs(newX1 - newX2) > eps || Math.abs(newY1 - newY2) > eps){
+        let midX = (newX1 + newX2) / 2;
+        let midY = (newY1 + newY2) / 2;
+        let midCode = calcCode(midX, midY);
+
+        if ((midCode & code1) === 0) {
+          newX2 = midX;
+          newY2 = midY;
+        }
+        else{
+          newX1 = midX;
+          newY1 = midY;
+        }
+      }
+      
+      x1 = newX1;
+      y1 = newY1;
+    }
+    if (code2 !== 0){
+      let newX1 = x1, newY1 = y1;
+      let newX2 = x2, newY2 = y2;
+
+      while(Math.abs(newX1 - newX2) > eps || Math.abs(newY1 - newY2) > eps){
+        let midX = (newX1 + newX2) / 2;
+        let midY = (newY1 + newY2) / 2;
+        let midCode = calcCode(midX, midY);
+
+        if ((midCode & code2) === 0) {
+          newX1 = midX;
+          newY1 = midY;
+        }
+        else{
+          newX2 = midX;
+          newY2 = midY;
+        }
+      }
+      
+      x2 = newX2;
+      y2 = newY2;
+    }
+    return { x1, y1, x2, y2 };
+  }
+
+  btnMidpoint.addEventListener('click', function() {
+    if (segments.length === 0) {
+      alert('Сначала загрузите файл с отрезками!');
+      return;
+    }
+    if (!clipWindow) {
+      alert('В данных файла отсутствует отсекающее окно!');
+      return;
+    }
+
+    clippedSegments = [];
+    clippedFig = [];
+    segments.forEach(seg => {
+      const result = midpointClip(seg);
+      if (result !== null) {
+        clippedSegments.push(result);
+      }
+    });
+
+    drawAll();
+  });
+
+  //алгоритм Сазерленда-Ходжмана
+  btnPolygonСlipping.addEventListener('click', function() {
+    if (segments.length === 0) {
+      alert('Сначала загрузите файл с многоугольником!');
+      return;
+    }
+    if (!clipWindow) {
+      alert('В данных файла отсутствует отсекающее окно!');
+      return;
+    }
+    
+    clippedSegments = [];
+    clippedFig = [];
+
+    let poly = segments.map(seg => ({ x: seg.x1, y: seg.y1 }));
+
+    const boundaries = ['xmin', 'xmax', 'ymin', 'ymax'];
+
+    boundaries.forEach(boundary => {
+      if (poly.length === 0) return;
+      
+      let nextPoly = [];
+      let s = poly[poly.length - 1];
+
+      for (let i = 0; i < poly.length; i++) {
+        let p = poly[i];
+
+        let sInside = false, pInside = false;
+        if (boundary === 'xmin') { sInside = (s.x >= clipWindow.xmin); pInside = (p.x >= clipWindow.xmin); }
+        if (boundary === 'xmax') { sInside = (s.x <= clipWindow.xmax); pInside = (p.x <= clipWindow.xmax); }
+        if (boundary === 'ymin') { sInside = (s.y >= clipWindow.ymin); pInside = (p.y >= clipWindow.ymin); }
+        if (boundary === 'ymax') { sInside = (s.y <= clipWindow.ymax); pInside = (p.y <= clipWindow.ymax); }
+
+        if (sInside !== pInside) {
+          let interPt = { x: 0, y: 0 };
+          
+          if (boundary === 'xmin' || boundary === 'xmax') {
+            interPt.x = (boundary === 'xmin') ? clipWindow.xmin : clipWindow.xmax;
+            interPt.y = s.y + (p.y - s.y) * (interPt.x - s.x) / (p.x - s.x);
+          } else {
+            interPt.y = (boundary === 'ymin') ? clipWindow.ymin : clipWindow.ymax;
+            interPt.x = s.x + (p.x - s.x) * (interPt.y - s.y) / (p.y - s.y);
+          }
+          
+          nextPoly.push(interPt);
+        }
+        if (pInside) {
+          nextPoly.push(p);
+        }
+
+        s = p;
+      }
+      poly = nextPoly;
+    });
+
+    clippedFig = poly;
+
+    drawAll();
+  });
+
+  
+  fileInput.addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(event) {
+      const text = event.target.result;
+      
+      // Разбиваем файл на строки, убираем пробелы по краям и фильтруем пустые строки
+      const lines = text.split('\n')
+                        .map(line => line.trim())
+                        .filter(line => line.length > 0);
+      
+      if (lines.length < 2) {
+        alert('Некорректный формат файла');
+        return;
+      }
+
+      // Очищаем старые данные перед загрузкой новых
+      segments = [];
+      clippedSegments = [];
+      clippedFig = [];
+      clipWindow = null;
+
+      // Первое число — количество отрезков
+      const n = parseInt(lines[0]);
+      if (isNaN(n)) {
+        alert('Не удалось прочитать количество отрезков');
+        return;
+      }
+
+      // Считываем n отрезков (со 2-й строки файла по n-ю)
+      for (let i = 1; i <= n; i++) {
+        if (!lines[i]) break;
+        const coords = lines[i].split(/\s+/).map(Number);
+        if (coords.length >= 4) {
+          segments.push({
+            x1: coords[0],
+            y1: coords[1],
+            x2: coords[2],
+            y2: coords[3]
+          });
+        }
+      }
+
+      // После n отрезков должна идти строка с координатами окна (Xmin Ymin Xmax Ymax)
+      const windowLine = lines[n + 1];
+      if (windowLine) {
+        const winCoords = windowLine.split(/\s+/).map(Number);
+        if (winCoords.length >= 4) {
+          clipWindow = {
+            xmin: winCoords[0],
+            ymin: winCoords[1],
+            xmax: winCoords[2],
+            ymax: winCoords[3]
+          };
+        }
+      } 
+      else {
+        alert('В файле не найдены координаты отсекающего окна');
+      }
+
+      fileInput.value = '';
+      drawAll();
+    };
+    
+    reader.readAsText(file);
+  });
+
+  canvas.addEventListener('wheel', function(e) {
+    // Получаем координаты мыши относительно левого верхнего угла канваса
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    // Считаем математическую позицию курсора до изменения масштаба
+    const mathX = (mouseX - centerX) / scale;
+    const mathY = (centerY - mouseY) / scale;
+
+    // Коэффициент изменения масштаба (zoom speed)
+    const zoomFactor = 1.1;
+
+    if (e.deltaY < 0) {
+      // Колёсико вверх — приближение
+      scale *= zoomFactor;
+    } 
+    else {
+      // Колёсико вниз — отдаление
+      scale /= zoomFactor;
+    }
+
+    if (scale < 0.0001) scale = 0.0001;
+    if (scale > 10000) scale = 10000;
+
+    // Корректируем центр экрана, чтобы точка под мышкой осталась на месте
+    centerX = mouseX - mathX * scale;
+    centerY = mouseY + mathY * scale;
+
+    drawAll();
+  });
+
+  canvas.addEventListener('mousedown', function(e) {
+    isDragging = true;
+    startX = e.clientX - centerX; // Запоминаем, где была мышь относительно центра
+    startY = e.clientY - centerY;
+  });
+  
+  canvas.addEventListener('mousemove', function(e) {
+    if (!isDragging) return;
+    centerX = e.clientX - startX;
+    centerY = e.clientY - startY;
+    drawAll(); // Мгновенно обновляем график
+  });
+  
+  window.addEventListener('mouseup', function() {
+    isDragging = false;
+  });
+  
+  drawAll();
+</script>
+</body>
+</html>
