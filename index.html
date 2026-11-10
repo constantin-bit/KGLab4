@@ -192,7 +192,7 @@
   function drawSegments() {
     if (segments.length === 0) return;
     
-    ctx.strokeStyle = '#0000FF'; // Синий цвет
+    ctx.strokeStyle = '#0000FF';
     ctx.lineWidth = 2;
     
     segments.forEach(seg => {
@@ -206,17 +206,14 @@
   function drawClipWindow() {
     if (!clipWindow) return;
     
-    ctx.strokeStyle = '#FF0000'; // Красный цвет
+    ctx.strokeStyle = '#FF0000';
     ctx.lineWidth = 2.5;
     
-    // Переводим математические координаты углов окна в пиксели экрана
     const xMin = toScreenX(clipWindow.xmin);
     const xMax = toScreenX(clipWindow.xmax);
     const yMin = toScreenY(clipWindow.ymin);
     const yMax = toScreenY(clipWindow.ymax);
     
-    // Вычисляем ширину и высоту для метода rect() канваса.
-    // На экране Y идет сверху вниз, поэтому yMax будет больше, чем yMin.
     const width = xMax - xMin;
     const height = yMax - yMin; 
     
@@ -326,11 +323,11 @@
 
   btnMidpoint.addEventListener('click', function() {
     if (segments.length === 0) {
-      alert('Сначала загрузите файл с отрезками!');
+      alert('Сначала загрузите файл с отрезками');
       return;
     }
     if (!clipWindow) {
-      alert('В данных файла отсутствует отсекающее окно!');
+      alert('В данных файла отсутствует отсекающее окно');
       return;
     }
 
@@ -349,11 +346,11 @@
   //алгоритм Сазерленда-Ходжмана
   btnPolygonСlipping.addEventListener('click', function() {
     if (segments.length === 0) {
-      alert('Сначала загрузите файл с многоугольником!');
+      alert('Сначала загрузите файл с многоугольником');
       return;
     }
     if (!clipWindow) {
-      alert('В данных файла отсутствует отсекающее окно!');
+      alert('В данных файла отсутствует отсекающее окно');
       return;
     }
     
@@ -406,7 +403,6 @@
     drawAll();
   });
 
-  
   fileInput.addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -415,30 +411,24 @@
     reader.onload = function(event) {
       const text = event.target.result;
       
-      // Разбиваем файл на строки, убираем пробелы по краям и фильтруем пустые строки
-      const lines = text.split('\n')
-                        .map(line => line.trim())
-                        .filter(line => line.length > 0);
+      const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
       
       if (lines.length < 2) {
         alert('Некорректный формат файла');
         return;
       }
 
-      // Очищаем старые данные перед загрузкой новых
       segments = [];
       clippedSegments = [];
       clippedFig = [];
       clipWindow = null;
 
-      // Первое число — количество отрезков
       const n = parseInt(lines[0]);
       if (isNaN(n)) {
         alert('Не удалось прочитать количество отрезков');
         return;
       }
 
-      // Считываем n отрезков (со 2-й строки файла по n-ю)
       for (let i = 1; i <= n; i++) {
         if (!lines[i]) break;
         const coords = lines[i].split(/\s+/).map(Number);
@@ -452,7 +442,6 @@
         }
       }
 
-      // После n отрезков должна идти строка с координатами окна (Xmin Ymin Xmax Ymax)
       const windowLine = lines[n + 1];
       if (windowLine) {
         const winCoords = windowLine.split(/\s+/).map(Number);
@@ -477,31 +466,26 @@
   });
 
   canvas.addEventListener('wheel', function(e) {
-    // Получаем координаты мыши относительно левого верхнего угла канваса
     const rect = canvas.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
-    // Считаем математическую позицию курсора до изменения масштаба
     const mathX = (mouseX - centerX) / scale;
     const mathY = (centerY - mouseY) / scale;
 
-    // Коэффициент изменения масштаба (zoom speed)
+    //zoom speed
     const zoomFactor = 1.1;
 
     if (e.deltaY < 0) {
-      // Колёсико вверх — приближение
       scale *= zoomFactor;
     } 
     else {
-      // Колёсико вниз — отдаление
       scale /= zoomFactor;
     }
 
     if (scale < 0.0001) scale = 0.0001;
     if (scale > 10000) scale = 10000;
 
-    // Корректируем центр экрана, чтобы точка под мышкой осталась на месте
     centerX = mouseX - mathX * scale;
     centerY = mouseY + mathY * scale;
 
@@ -510,7 +494,7 @@
 
   canvas.addEventListener('mousedown', function(e) {
     isDragging = true;
-    startX = e.clientX - centerX; // Запоминаем, где была мышь относительно центра
+    startX = e.clientX - centerX;
     startY = e.clientY - centerY;
   });
   
@@ -518,7 +502,7 @@
     if (!isDragging) return;
     centerX = e.clientX - startX;
     centerY = e.clientY - startY;
-    drawAll(); // Мгновенно обновляем график
+    drawAll();
   });
   
   window.addEventListener('mouseup', function() {
